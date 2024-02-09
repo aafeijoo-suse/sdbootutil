@@ -394,7 +394,7 @@ install_kernel()
 		local snapshot_dir="/.snapshots/$snapshot/snapshot"
 		local dracut_args=()
 		if [ "$subvol" != "$root_subvol" ]; then
-			dracut_args=('--sysroot' "${snapshot_dir}" '--tmpdir' '/var/tmp')
+			dracut_args=('--sysroot' "${snapshot_dir}" '--tmpdir' '/var/tmp' '--add-device' "/dev/disk/by-uuid/${root_uuid}")
 		fi
 		log_info "generating new initrd"
 
@@ -402,7 +402,7 @@ install_kernel()
 		# inside the snapshot.  For example, /etc/crypttab can
 		# have modifications in the overlay that will be
 		# visible once the snapshot is active, but the version
-		# in /.snashots is still the unmodified base
+		# in /.snapshots is still the unmodified base
 		is_transactional && mount_etc "${snapshot_dir}"
 		run_command_live_output dracut --quiet --reproducible "${dracut_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
 		is_transactional && umount_etc "${snapshot_dir}"
