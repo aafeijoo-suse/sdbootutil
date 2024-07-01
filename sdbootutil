@@ -1518,7 +1518,7 @@ regex_entries_ids_for_prediction()
 		done
 	else
 		while read -r id; do
-			if [ "${#snaphosts[@]}" -lt 3 ]; then
+			if [ "${#snapshots[@]}" -lt 3 ]; then
 				snapshots[$id]=1
 			fi
 		done < <(jq -r '.root|sort_by(.date)[-2:]|.[]|.number' "$snapperfile")
