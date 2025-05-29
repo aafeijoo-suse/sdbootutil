@@ -685,6 +685,21 @@ set_machine_id()
 	done
 }
 
+find_initrd_generator()
+{
+	# INITRD_GENERATOR can be optionally defined in /etc/sysconfig/bootloader
+	if [ -z "$INITRD_GENERATOR" ]; then
+		# dracut is the default initrd generator
+		INITRD_GENERATOR="dracut"
+	elif [ "$INITRD_GENERATOR" = "mkosi" ]; then
+		INITRD_GENERATOR="mkosi-initrd"
+	fi
+
+	[ "$INITRD_GENERATOR" = "dracut" ] || [ "$INITRD_GENERATOR" = "mkosi-initrd" ] || {
+		err ". /etc/sysconfig/bootloader has INITRD_GENERATOR=\"$INITRD_GENERATOR\", but only \"dracut\" or \"mkosi-initrd\" are recognized."
+	}
+}
+
 reuse_initrd()
 {
 	local snapshot="$1"
@@ -743,7 +758,7 @@ mount_chroot()
 	rm "$tmpdir/mounts"
 
 	mount -t tmpfs -o size=10m tmpfs "$snapshot_dir/run"
-	for i in proc dev sys tmp; do
+	for i in proc dev sys tmp run; do
 		mount --bind "/$i" "$snapshot_dir/$i"
 	done
 	chroot_dir="$snapshot_dir"
@@ -1001,18 +1016,36 @@ install_kernel()
 			((++i))
 		done
 		/usr/bin/mkmoduleinitrd "${subvol#"${subvol_prefix}"}" "$kernel_version" "$tmpdir/initrd-$i"
-	elif ! reuse_initrd "$snapshot" "$subvol" "$kernel_version"; then
+	elif ! reuse_initrd "$snapshot" "$subvol" "$kernel_version" && find_initrd_generator; then
 		local snapshot_dir="/.snapshots/$snapshot/snapshot"
-		local dracut_args=(
-			'--reproducible'
-			'--force'
-			'--tmpdir' '/var/tmp'
-		)
-		if [ "${verbose:-0}" -le 1 ]; then
-			dracut_args+=('--quiet')
-		fi
+		local initrd_args=()
+		case "$INITRD_GENERATOR" in
+			"dracut")
+				initrd_args+=(
+					'--reproducible'
+					'--force'
+					'--tmpdir' '/var/tmp'
+				)
+				if [ "${verbose:-0}" -le 1 ]; then
+					initrd_args+=('--quiet')
+				fi
+				;;
+			"mkosi-initrd")
+				# There is no direct support for reproducible builds in mkosi,
+				# but we can achieve it by removing non-reproducible content via
+				# RemoveFiles= in /usr/lib/mkosi-initrd/mkosi.conf, and setting
+				# the following two options via configuration in /run
+				mkdir -p "/run/mkosi-initrd/mkosi.conf.d"
+				{
+					echo "[Output]"
+					echo "Seed=00000000-0000-0000-0000-000000000000"
+					echo "[Content]"
+					echo "SourceDateEpoch=0"
+				} > "/run/mkosi-initrd/mkosi.conf.d/01-sdbootutil-reproducible.conf"
+				;;
+		esac
 
-		info "Generating new initrd"
+		info "Generating new initrd using $INITRD_GENERATOR"
 
 		if [ "$subvol" != "$root_subvol" ] && [ -n "$have_snapshots" ]; then
 			mount_chroot "${snapshot_dir}"
@@ -1022,10 +1055,26 @@ install_kernel()
 			# visible once the snapshot is active, but the version
 			# in /.snapshots is still the unmodified base
 			is_transactional && mount_etc "${snapshot_dir}"
-			chroot "${snapshot_dir}" dracut "${dracut_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
+			case "$INITRD_GENERATOR" in
+				"dracut")
+					chroot "${snapshot_dir}" dracut "${initrd_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
+					;;
+				"mkosi-initrd")
+					chroot "${snapshot_dir}" mkosi-initrd -O "$tmpdir" -o "initrd-0" --kernel-version "$kernel_version"
+					rm -f "/run/mkosi-initrd/mkosi.conf.d/01-sdbootutil-reproducible.conf"
+					;;
+			esac
 			umount_chroot "${snapshot_dir}"
 		else
-			dracut "${dracut_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
+			case "$INITRD_GENERATOR" in
+				"dracut")
+					dracut "${initrd_args[@]}" "$tmpdir/initrd-0" "$kernel_version"
+					;;
+				"mkosi-initrd")
+					mkosi-initrd -O "$tmpdir" -o "initrd-0" --kernel-version "$kernel_version"
+					rm -f "/run/mkosi-initrd/mkosi.conf.d/01-sdbootutil-reproducible.conf"
+					;;
+			esac
 		fi
 	fi
 
@@ -2599,7 +2648,7 @@ generate_tpm2_predictions_pcr_oracle()
 	done
 
 	# Publish the assets in the ESP, so can be imported by
-	# dracut-pcr-signature
+	# initrd-pcr-signature
 	cp /etc/systemd/tpm2-pcr-public-key.pem "${boot_root}${boot_dst}"
 	[ -e /etc/systemd/tpm2-pcr-signature.json ] && \
 		cp /etc/systemd/tpm2-pcr-signature.json "${boot_root}${boot_dst}" && {
@@ -2747,7 +2796,7 @@ generate_tpm2_predictions_pcr_15()
 	echo "$crypttab_sha1" > /var/lib/sdbootutil/crypttab.sha1
 
 	# Publish the assets in the ESP, so can be imported by
-	# dracut-pcr-signature
+	# initrd-pcr-signature
 	[ ! -e /var/lib/sdbootutil/measure-pcr-prediction ] || \
 		cp /var/lib/sdbootutil/measure-pcr-prediction "${boot_root}${boot_dst}"
 	[ ! -e /var/lib/sdbootutil/measure-pcr-prediction.sha256 ] || \
