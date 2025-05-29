@@ -6,15 +6,13 @@ set -euo pipefail
 
 [ -f "/etc/crypttab" ] || exit 0;
 
+# Only intended to run in the initrd
+[ -e "/etc/initrd-release" ] || exit 0
+
 # Read /etc/crypttab lines that contains tpm2-device and
 # tpm2-measure-pcr.  It will order the services as listed in this file
 after=""
 while read -r name _ _ opts; do
-	# Only the entries in /etc/crypttab in the initrd should
-	# participate from the extension for now.  The reason is that
-	# extensions after the switch root cannot participate in abort
-	# the boot process from initrd itself
-	[ -f "/etc/initrd-release" ] || continue
 	[[ "$name" = \#* ]] && continue
 	[[ "$opts" != *"tpm2-device="* ]] && continue
 	[[ "$opts" != *"tpm2-measure-pcr="* ]] && continue

@@ -5,9 +5,23 @@ WHITE="\e[1;37m"
 LIGHT_BLUE="\e[1;34m"
 END="\e[m"
 
-get_measure_pcr_ignore() {
-	(set +eu; . /lib/dracut-lib.sh; getargbool no measure-pcr-validator.ignore)
-}
+if [ -e /lib/dracut-lib.sh ]; then
+	type getargbool > /dev/null 2>&1 || . /lib/dracut-lib.sh
+else
+	getargbool() {
+		local _i _cmdline=() _value="$1" _arg="$2"
+		_cmdline=($(< /proc/cmdline))
+		for _i in "${_cmdline[@]}"; do
+			[ "${_i%%=*}" == "$_arg" ] && _value="${_i##*=}"
+		done
+		if [ -n "$_value" ]; then
+			[ "$_value" = "0" ] && return 1
+			[ "$_value" = "no" ] && return 1
+			[ "$_value" = "off" ] && return 1
+		fi
+		return 0
+	}
+fi
 
 validate_measure_pcr_signature() {
 	openssl dgst -sha256 \
@@ -46,7 +60,7 @@ validate_measure_pcr() {
 # The measure-pcr-prediction file contain a list of hashes (sha1,
 # sha256, ...)
 if [ -f "/var/lib/sdbootutil/measure-pcr-prediction" ] && ! validate_measure_pcr; then
-	if get_measure_pcr_ignore; then
+	if getargbool no measure-pcr-validator.ignore; then
 		echo "Warning: the validation of PCR 15 failed. Continuing the boot process"
 	else
 		echo "Error: the validation of PCR 15 failed"

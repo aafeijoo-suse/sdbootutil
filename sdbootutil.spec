@@ -24,9 +24,9 @@ License:        MIT
 URL:            https://github.com/openSUSE/sdbootutil
 Source:         %{name}-%{version}.tar
 BuildRequires:  systemd-rpm-macros
-Requires:       %{name}-dracut-measure-pcr
+Requires:       (%{name}-measure-pcr-dracut if dracut)
+Requires:       (%{name}-measure-pcr-mkosi-initrd if mkosi-initrd)
 Requires:       dialog
-Requires:       dracut-pcr-signature
 Requires:       efibootmgr
 Requires:       jq
 Requires:       keyutils
@@ -115,15 +115,29 @@ Bash completions script for sdbootutil.
 Allows the user to press TAB to see available commands,
 options and parameters.
 
-%package dracut-measure-pcr
-Summary:        Dracut module to measure PCR 15
+%package measure-pcr-dracut
+Summary:        dracut module to measure PCR 15
 BuildRequires:  pkgconfig
 BuildRequires:  rpm-config-SUSE
 BuildRequires:  pkgconfig(dracut)
+Requires:       initrd-pcr-signature-dracut
+Requires(post): suse-module-tools-scriptlets
+Provides:       dracut-measure-pcr
 BuildArch:      noarch
 
-%description dracut-measure-pcr
-Dracut module from sdbootutil to measure PCR 15 in non-UKIs systems
+%description measure-pcr-dracut
+dracut module from sdbootutil to measure PCR 15 in non-UKIs systems.
+
+%package measure-pcr-mkosi-initrd
+Summary:        dracut module to measure PCR 15
+BuildRequires:  rpm-config-SUSE
+Requires:       initrd-pcr-signature-mkosi-initrd
+Requires(post): suse-module-tools-scriptlets
+BuildArch:      noarch
+
+%description measure-pcr-mkosi-initrd
+mkosi-initrd configuration from sdbootutil to measure PCR 15 in non-UKIs
+systems.
 
 %prep
 %setup -q
@@ -158,11 +172,18 @@ install -D -m 755 50-%{name}.install %{buildroot}%{_prefix}/lib/kernel/install.d
 # Bash completions
 install -D -m 755 completions/bash_sdbootutil %{buildroot}%{_datadir}/bash-completion/completions/sdbootutil
 
-# Dracut module
+# initrd common
+install -D -m 0755 measure-pcr-generator.sh %{buildroot}%{_systemdgeneratordir}/measure-pcr-generator
+install -D -m 0755 measure-pcr-validator.sh %{buildroot}%{_libexecdir}/measure-pcr-validator
+install -D -m 0644 measure-pcr-validator.service %{buildroot}%{_unitdir}/measure-pcr-validator.service
+
+# dracut module
 install -D -m 755 module-setup.sh %{buildroot}%{_prefix}/lib/dracut/modules.d/50measure-pcr/module-setup.sh
-install -D -m 755 measure-pcr-generator.sh %{buildroot}%{_prefix}/lib/dracut/modules.d/50measure-pcr/measure-pcr-generator.sh
-install -D -m 755 measure-pcr-validator.sh %{buildroot}%{_prefix}/lib/dracut/modules.d/50measure-pcr/measure-pcr-validator.sh
-install -D -m 644 measure-pcr-validator.service %{buildroot}/%{_prefix}/lib/dracut/modules.d/50measure-pcr/measure-pcr-validator.service
+
+# mkosi-initrd configuration
+install -D -m 644 mkosi.conf %{buildroot}%{_prefix}/lib/mkosi-initrd/mkosi.conf.d/50-measure-pcr.conf
+install -D -m 644 mkosi-extra.conf %{buildroot}%{_prefix}/lib/mkosi-initrd/mkosi.conf.d/50-measure-pcr-pem.conf
+install -D -m 644 mkosi.preset %{buildroot}%{_prefix}/lib/mkosi-initrd/mkosi.extra/usr/lib/systemd/system-preset/50-measure-pcr.preset
 
 install -d -m 700 %{buildroot}%{_sharedstatedir}/%{name}
 
@@ -212,13 +233,22 @@ fi
 %posttrans kernel-install
 %tmpfiles_create kernel-install-%{name}.conf
 
-%post dracut-measure-pcr
+%post measure-pcr-dracut
 %{?regenerate_initrd_post}
 
-%posttrans dracut-measure-pcr
+%posttrans measure-pcr-dracut
 %{?regenerate_initrd_posttrans}
 
-%postun dracut-measure-pcr
+%postun measure-pcr-dracut
+%{?regenerate_initrd_post}
+
+%post measure-pcr-mkosi-initrd
+%{?regenerate_initrd_post}
+
+%posttrans measure-pcr-mkosi-initrd
+%{?regenerate_initrd_posttrans}
+
+%postun measure-pcr-mkosi-initrd
 %{?regenerate_initrd_post}
 
 %files
@@ -226,6 +256,10 @@ fi
 %dir %{_sharedstatedir}/%{name}
 %{_bindir}/%{name}
 %{_unitdir}/%{name}-update-predictions.service
+%dir %{_systemdgeneratordir}
+%{_systemdgeneratordir}/measure-pcr-generator
+%{_libexecdir}/measure-pcr-validator
+%{_unitdir}/measure-pcr-validator.service
 
 %files snapper
 %dir %{_prefix}/lib/snapper
@@ -259,9 +293,21 @@ fi
 %dir %{_datadir}/bash-completion/completions
 %{_datadir}/bash-completion/completions/sdbootutil
 
-%files dracut-measure-pcr
+%files measure-pcr-dracut
 %dir %{_prefix}/lib/dracut
 %dir %{_prefix}/lib/dracut/modules.d
 %{_prefix}/lib/dracut/modules.d/50measure-pcr
+
+%files measure-pcr-mkosi-initrd
+%dir %{_prefix}/lib/mkosi-initrd
+%dir %{_prefix}/lib/mkosi-initrd/mkosi.conf.d
+%{_prefix}/lib/mkosi-initrd/mkosi.conf.d/50-measure-pcr.conf
+%{_prefix}/lib/mkosi-initrd/mkosi.conf.d/50-measure-pcr-pem.conf
+%dir %{_prefix}/lib/mkosi-initrd/mkosi.extra
+%dir %{_prefix}/lib/mkosi-initrd/mkosi.extra/usr
+%dir %{_prefix}/lib/mkosi-initrd/mkosi.extra/usr/lib
+%dir %{_prefix}/lib/mkosi-initrd/mkosi.extra/usr/lib/systemd
+%dir %{_prefix}/lib/mkosi-initrd/mkosi.extra/usr/lib/systemd/system-preset
+%{_prefix}/lib/mkosi-initrd/mkosi.extra/usr/lib/systemd/system-preset/50-measure-pcr.preset
 
 %changelog

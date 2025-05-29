@@ -8,10 +8,12 @@ Wants=cryptsetup.target
 After=cryptsetup.target
 Before=local-fs.target
 
+ConditionPathExists=/etc/initrd-release
+
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/measure-pcr-validator
+ExecStart=/usr/libexec/measure-pcr-validator
 Environment=TERM=linux
 ExecStopPost=/bin/sh -c "/usr/bin/plymouth quit 2>/dev/null || :"
 StandardOutput=tty
